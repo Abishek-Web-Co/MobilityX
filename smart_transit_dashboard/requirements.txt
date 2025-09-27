@@ -1,1 +1,6 @@
-numpy==2.3.0
+streamlit
+pandas
+requests
+protobuf
+gtfs-realtime-bindings
+pydeck
