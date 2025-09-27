@@ -63,6 +63,8 @@ else:
         st.bar_chart(route_counts)
 
     # --- Main Area ---
+    display_df = live_df
+    
     # Display Trip Planner results if stops are selected
     if start_stop_name and end_stop_name:
         st.header("Commute Recommendation")
@@ -85,12 +87,15 @@ else:
     # Map Display
     st.header("Live Transit Map")
     
-    # Filter and setup map layers
-    if selected_route != "All Routes": display_df = live_df[live_df['route_id'] == selected_route]
-    else: display_df = live_df
-    layers = [pdk.Layer("TileLayer", data="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", opacity=0.8),
-              pdk.Layer('ScatterplotLayer', data=display_df, get_position='[longitude, latitude]',
-                        get_color='color', get_radius=80, pickable=True)]
+    # Filter data for the map based on sidebar selection
+    if selected_route != "All Routes":
+        display_df = live_df[live_df['route_id'] == selected_route]
+    
+    layers = [
+        pdk.Layer("TileLayer", data="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", opacity=0.8),
+        pdk.Layer('ScatterplotLayer', data=display_df, get_position='[longitude, latitude]',
+                  get_color='color', get_radius=80, pickable=True)
+    ]
     if show_stops:
         layers.append(pdk.Layer('ScatterplotLayer', data=stops_df, get_position='[stop_lon, stop_lat]',
                                 get_color='[200, 200, 200, 100]', get_radius=15))
