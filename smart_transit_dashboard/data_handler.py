@@ -1,48 +1,68 @@
+import streamlit as st
 import requests
 import pandas as pd
 from google.transit import gtfs_realtime_pb2
+import time
 
-# --- This is the correct, direct URL for live NYC Bus Data ---
-REALTIME_FEED_URL = "http://gtfsrt.prod.obanyc.com/vehiclePositions.pb"
+# --- URLs for live data feeds ---
+POSITIONS_URL = "http://gtfsrt.prod.obanyc.com/vehiclePositions.pb"
+TRIP_UPDATES_URL = "http://gtfsrt.prod.obanyc.com/tripUpdates.pb"
 
-
-def get_live_data(feed_url):
+# Using cache for the stops data so we only read the local file once
+@st.cache_data
+def get_all_stops():
     """
-    Fetches and parses live GTFS-Realtime data from NYC MTA.
+    Reads the local stops.txt file.
     """
-    print("Attempting to fetch live data from NYC...")
+    print("Reading local bus stop data...")
     try:
-        feed = gtfs_realtime_pb2.FeedMessage()
-        
-        response = requests.get(feed_url, timeout=20)
-        response.raise_for_status() # Raise an exception for bad status codes
-        
-        feed.ParseFromString(response.content)
-        
-        bus_data = []
-        for entity in feed.entity:
-            if entity.HasField('vehicle'):
-                bus_data.append({
-                    'vehicle_id': entity.vehicle.vehicle.id,
-                    'route_id': entity.vehicle.trip.route_id,
-                    'latitude': entity.vehicle.position.latitude,
-                    'longitude': entity.vehicle.position.longitude,
-                })
-                
-        df = pd.DataFrame(bus_data)
-        return df
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching data: {e}")
+        # Read the local CSV file directly
+        stops_df = pd.read_csv("stops.txt")
+        return stops_df[['stop_id', 'stop_name', 'stop_lat', 'stop_lon']]
+    except FileNotFoundError:
+        print("Error: stops.txt not found! Make sure you've downloaded it.")
+        return pd.DataFrame()
+    except Exception as e:
+        print(f"Error reading stops data: {e}")
         return pd.DataFrame()
 
-# This block lets us test it
-if __name__ == "__main__":
-    live_bus_df = get_live_data(REALTIME_FEED_URL)
-    
-    if not live_bus_df.empty:
-        print("\n✅ Success! Fetched live NYC bus data.")
-        print(f"Number of active buses: {len(live_bus_df)}")
-        print(live_bus_df.head())
-    else:
-        print("\n❌ Failed to fetch data. Make sure your URL is correct and you have an internet connection.")
+
+def get_live_data():
+    """
+    Fetches and merges both vehicle positions and trip updates.
+    """
+    print(f"Fetching new data at {time.strftime('%X')}")
+    try:
+        # Fetch Vehicle Positions
+        positions_feed = gtfs_realtime_pb2.FeedMessage()
+        positions_response = requests.get(POSITIONS_URL, timeout=20)
+        positions_response.raise_for_status()
+        positions_feed.ParseFromString(positions_response.content)
+        positions_df = pd.DataFrame([{
+            'trip_id': entity.vehicle.trip.trip_id,
+            'route_id': entity.vehicle.trip.route_id,
+            'vehicle_id': entity.vehicle.vehicle.id,
+            'latitude': entity.vehicle.position.latitude,
+            'longitude': entity.vehicle.position.longitude,
+        } for entity in positions_feed.entity if entity.HasField('vehicle')])
+
+        # Fetch Trip Updates (for delay info)
+        updates_feed = gtfs_realtime_pb2.FeedMessage()
+        updates_response = requests.get(TRIP_UPDATES_URL, timeout=20)
+        updates_response.raise_for_status()
+        updates_feed.ParseFromString(updates_response.content)
+        updates_df = pd.DataFrame([{
+            'trip_id': entity.trip_update.trip.trip_id,
+            'delay': entity.trip_update.stop_time_update[0].arrival.delay,
+        } for entity in updates_feed.entity if entity.HasField('trip_update') and entity.trip_update.stop_time_update])
+
+        # Merge the two datasets
+        if not positions_df.empty and not updates_df.empty:
+            merged_df = pd.merge(positions_df, updates_df, on='trip_id', how='left')
+            return merged_df
+        else:
+            return positions_df
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching live data: {e}")
+        return pd.DataFrame()
