@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from google.transit import gtfs_realtime_pb2
 import time
+import random
 
 # --- URLs for live data feeds ---
 POSITIONS_URL = "http://gtfsrt.prod.obanyc.com/vehiclePositions.pb"
@@ -66,3 +67,15 @@ def get_live_data():
     except requests.exceptions.RequestException as e:
         print(f"Error fetching live data: {e}")
         return pd.DataFrame()
+    
+def predict_delay(hour):
+    """
+    A simple, rule-based model to predict delay based on the hour of the day.
+    """
+    if 8 <= hour <= 10 or 17 <= hour <= 19:
+        # Peak hours: Predict a delay between 5 to 10 minutes (300-600 seconds)
+        base_delay = random.randint(300, 600)
+    else:
+        # Off-peak hours: Predict a delay between 0 to 2 minutes (0-120 seconds)
+        base_delay = random.randint(0, 120)
+    return base_delay

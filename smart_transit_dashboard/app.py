@@ -4,11 +4,11 @@ import pydeck as pdk
 import time
 from math import radians, sin, cos, sqrt, atan2
 
-# Import our data handling functions
-from data_handler import get_live_data, get_all_stops
+# Import all our data handling functions
+from data_handler import get_live_data, get_all_stops, predict_delay
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Multi-Modal Transit Dashboard", layout="wide")
+st.set_page_config(page_title="Smart Commute Dashboard", layout="wide")
 
 # --- Helper Functions ---
 def get_color_by_delay(delay):
@@ -28,7 +28,7 @@ live_df = get_live_data()
 stops_df = get_all_stops()
 
 # --- Main App ---
-st.title("NYC Multi-Modal Transit Tracker 🚌🚇")
+st.title("Smart Commute NYC 🚌🚇")
 
 if live_df.empty or stops_df.empty:
     st.error("Error: Could not fetch transit data.")
@@ -44,6 +44,18 @@ else:
     st.sidebar.title("Controls & Analytics")
     st.sidebar.info(f"Tracking **{len(bus_df)}** buses and **{len(subway_df)}** subways.")
     
+    with st.sidebar.expander("🔮 Delay Predictor"):
+        route_list_pred = sorted(bus_df['route_id'].unique().tolist())
+        selected_route_pred = st.selectbox("Select a Bus Route:", route_list_pred, key="pred_route")
+        selected_hour = st.slider("Select Hour of Day (24-hr format):", 0, 23, int(time.strftime("%H")))
+        
+        predicted_delay_sec = predict_delay(selected_hour)
+        predicted_delay_min = predicted_delay_sec / 60
+        st.metric(
+            label=f"Predicted Delay for Route {selected_route_pred} at {selected_hour}:00",
+            value=f"~{predicted_delay_min:.1f} minutes"
+        )
+
     with st.sidebar.expander("📍 Trip Planner"):
         stop_names = [""] + sorted(stops_df['stop_name'].unique().tolist())
         start_stop_name = st.selectbox("Start Stop:", stop_names, key="start_stop")
@@ -75,11 +87,14 @@ else:
         end_stop = stops_df[stops_df['stop_name'] == end_stop_name].iloc[0]
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("🚌 Public Transit")
-            st.metric(label="Est. Time", value="~25-35 Mins")
-            st.metric(label="Est. Cost", value="$2.90")
+            st.subheader("🚌 Bus vs. 🚇 Subway")
+            st.metric(label="Bus Est. Time", value="~30-40 Mins")
+            st.metric(label="Bus Fare", value="$2.90")
+            st.markdown("---")
+            st.metric(label="Subway Est. Time", value="~20-25 Mins")
+            st.metric(label="Subway Fare", value="$2.90")
         with col2:
-            st.subheader("🚗 Private Ride-Share")
+            st.subheader("🚗 Ride-Share (Estimate)")
             distance = haversine_distance(start_stop['stop_lat'], start_stop['stop_lon'], end_stop['stop_lat'], end_stop['stop_lon'])
             est_time_mins = int((distance * 1.4 / 20) * 60)
             est_cost_usd = distance * 1.4 * 1.50
@@ -95,7 +110,9 @@ else:
     else:
         display_bus_df = bus_df
     
-    layers = [pdk.Layer("TileLayer", data="https://a.tile.openstreetmap.org/carto/dark_matter/{z}/{x}/{y}.png", opacity=0.8)]
+    layers = [
+        pdk.Layer("TileLayer", data="https://a.tile.openstreetmap.org/carto/dark_matter/{z}/{x}/{y}.png", opacity=0.8)
+    ]
     if show_buses:
         layers.append(pdk.Layer('ScatterplotLayer', data=display_bus_df, get_position='[longitude, latitude]',
                                 get_color='color', get_radius=80, pickable=True))
@@ -117,3 +134,4 @@ else:
             lambda row: haversine_distance(lat_input, lon_input, row['stop_lat'], row['stop_lon']), axis=1)
         nearest_stops = stops_df.nsmallest(5, 'distance_km')
         st.dataframe(nearest_stops[['stop_name', 'distance_km']].style.format({'distance_km': '{:.2f} km'}))
+
